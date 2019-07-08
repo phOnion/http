@@ -1,0 +1,13 @@
+{
+    "name": "onion/http",
+    "require": {
+        "onion/event-loop": "dev-master",
+        "onion/server": "dev-master",
+        "onion/promise": "dev-master"
+    },
+    "autoload": {
+        "psr-4": {
+            "Onion\\Framework\\": "src/"
+        }
+    }
+}
