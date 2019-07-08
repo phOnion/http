@@ -3,11 +3,15 @@
     "require": {
         "onion/event-loop": "dev-master",
         "onion/server": "dev-master",
-        "onion/promise": "dev-master"
+        "onion/promise": "dev-master",
+        "guzzlehttp/psr7": "^1.6"
     },
     "autoload": {
         "psr-4": {
             "Onion\\Framework\\": "src/"
-        }
+        },
+        "files": [
+            "src/functions.php"
+        ]
     }
 }

@@ -1,7 +1,7 @@
 <?php
 namespace Onion\Framework\Http\Drivers;
 
-use function Onion\Framework\Server\build_request;
+use function Onion\Framework\Http\build_request;
 use Onion\Framework\Http\Events\RequestEvent;
 use Onion\Framework\Server\Drivers\DriverTrait;
 use Onion\Framework\Server\Interfaces\ContextInterface;
