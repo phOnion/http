@@ -33,7 +33,7 @@ class HttpDriver implements DriverInterface
         while ($socket->isAlive()) {
             yield $socket->wait();
             try {
-                $connection = $socket->accept();
+                $connection = yield $socket->accept();
             } catch (\InvalidArgumentException $ex) {
                 // Accept failed, we ok
                 continue;
