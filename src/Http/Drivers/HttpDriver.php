@@ -29,9 +29,10 @@ class HttpDriver implements DriverInterface
     public function listen(string $address, ?int $port, ContextInterface ...$contexts): \Generator
     {
         $socket = $this->createSocket($address, $port, $contexts);
-        yield $socket->wait();
 
         while ($socket->isAlive()) {
+            yield $socket->wait();
+
             try {
                 $connection = yield $socket->accept();
             } catch (\InvalidArgumentException $ex) {
