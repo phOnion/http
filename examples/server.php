@@ -7,6 +7,7 @@ use Onion\Framework\Event\ListenerProviders\AggregateProvider;
 use Onion\Framework\Event\ListenerProviders\SimpleProvider;
 use Onion\Framework\Http\Drivers\HttpDriver;
 use Onion\Framework\Http\Events\RequestEvent;
+use Onion\Framework\Loop\Interfaces\AsyncResourceInterface;
 use Onion\Framework\Loop\Scheduler;
 use Onion\Framework\Server\Server;
 
@@ -17,10 +18,11 @@ $provider->addProvider(new SimpleProvider([
         function (RequestEvent $event) {
             $data = "Received: \n" . str($event->getRequest());
             $response = new Response(200, [
-                'Content-type' => 'text/plain'
+                'Content-type' => 'text/plain; charset=utf-8',
+                'Content-length' => strlen($data),
             ], stream_for($data));
+
             $event->getConnection()->write(str($response));
-            $event->getConnection()->close();
         }
     ],
 ]));
