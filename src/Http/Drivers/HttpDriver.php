@@ -3,6 +3,9 @@ namespace Onion\Framework\Http\Drivers;
 
 use function Onion\Framework\Http\build_request;
 use Onion\Framework\Http\Events\RequestEvent;
+use Onion\Framework\Loop\Coroutine;
+use Onion\Framework\Loop\Interfaces\AsyncResourceInterface;
+use Onion\Framework\Loop\Interfaces\ResourceInterface;
 use Onion\Framework\Server\Drivers\DriverTrait;
 use Onion\Framework\Server\Interfaces\ContextInterface;
 use Onion\Framework\Server\Interfaces\DriverInterface;
@@ -31,32 +34,36 @@ class HttpDriver implements DriverInterface
         $socket = $this->createSocket($address, $port, $contexts);
 
         while ($socket->isAlive()) {
-            yield $socket->wait();
-
             try {
                 $connection = yield $socket->accept();
-            } catch (\InvalidArgumentException $ex) {
+
+                yield Coroutine::create(function (ResourceInterface $connection, EventDispatcherInterface $dispatcher) {
+
+                    try {
+                        /** @var ConnectEvent $event */
+                        while ($connection->isAlive()) {
+                            yield $connection->wait();
+
+                            $data = '';
+                            while (($chunk = $connection->read(8192)) !== '') {
+                                $data .= $chunk;
+                                yield;
+                            }
+
+                            yield $connection->wait(AsyncResourceInterface::OPERATION_WRITE);
+                            yield $dispatcher->dispatch(new RequestEvent(build_request($data), $connection));
+                        }
+                    } catch (\LogicException $ex) {
+                        // Probably stream died mid event dispatching
+                    }
+
+                }, [$connection, $this->dispatcher]);
+
+            } catch (\Throwable $ex) {
                 // Accept failed, we ok
-                continue;
             }
 
-            yield $connection->wait();
-            $data = '';
-            while ($connection->isAlive()) {
-                $chunk = $connection->read(8192);
-                if (!$chunk) {
-                    break;
-                }
-
-                $data .= $chunk;
-            }
-
-            if ($connection->isAlive() && $data !== '') {
-                $request = build_request($data);
-                yield $this->dispatcher->dispatch(
-                    new RequestEvent($request, $connection)
-                );
-            }
+            yield;
         }
     }
 }
