@@ -1,22 +1,27 @@
 <?php
+
 namespace Onion\Framework\Http;
 
-use function GuzzleHttp\Psr7\parse_query;
-use function GuzzleHttp\Psr7\parse_request;
-use GuzzleHttp\Psr7\ServerRequest;
-use GuzzleHttp\Psr7\UploadedFile;
+use GuzzleHttp\Psr7\{Message, Query, ServerRequest, UploadedFile};
 use Psr\Http\Message\ServerRequestInterface;
 
+use function GuzzleHttp\Psr7\{parse_query, parse_request};
+
 if (!function_exists(__NAMESPACE__ . '\build_request')) {
-    function build_request($message): ServerRequestInterface {
-        $req = parse_request($message);
-        $request = new ServerRequest(
+    function build_request(string $message): ServerRequestInterface
+    {
+        $queryParams = [];
+
+        $req = Message::parseRequest($message);
+        parse_str($req->getUri()->getQuery(), $queryParams);
+
+        $request = (new ServerRequest(
             $req->getMethod(),
             $req->getUri(),
             $req->getHeaders(),
             $req->getBody(),
             $req->getProtocolVersion()
-        );
+        ))->withQueryParams($queryParams);
 
         $bodyLength = (int) $req->getHeaderLine('content-length');
         if ($bodyLength > 0) {
@@ -24,25 +29,44 @@ if (!function_exists(__NAMESPACE__ . '\build_request')) {
             $pattern = '/^multipart\/form-data; boundary=(?P<boundary>.*)$/i';
             if (preg_match($pattern, $request->getHeaderLine('content-type'), $matches)) {
                 $request = extract_multipart($request, $body, $matches['boundary']);
-            } else if (preg_match('/^application\/x-www-form-urlencoded/', $request->getHeaderLine('content-type'), $matches)) {
-                $request = $request->withParsedBody(parse_query($body));
-            } else if (preg_match('/^application\/json/', $request->getHeaderLine('content-type'))) {
+            } elseif (
+                preg_match('/^application\/x-www-form-urlencoded/', $request->getHeaderLine('content-type'), $matches)
+            ) {
+                $request = $request->withParsedBody(Query::parse($body));
+            } elseif (preg_match('/^application\/json/', $request->getHeaderLine('content-type'))) {
                 $request = $request->withParsedBody(json_decode($body, true));
             }
         }
 
-        return $request;
+        $cookies = [];
+        foreach ($request->getHeader('cookie') as $rawValue) {
+            foreach (explode('; ', $rawValue) as $line) {
+                list($cookie, $value) = explode('=', $line, 2);
+                if (isset($cookies[$cookie])) {
+                    if (!is_array($cookies[$cookie])) {
+                        $cookies[$cookie] = [$cookies[$cookie]];
+                    }
+
+                    $cookies[$cookie][] = $value;
+                } else {
+                    $cookies[$cookie] = $value;
+                }
+            }
+        }
+
+        return $request->withCookieParams($cookies);
     }
 }
 
 if (!function_exists(__NAMESPACE__ . '\extract_multipart')) {
-    function extract_multipart(ServerRequestInterface $request, string $body, string $boundary) {
+    function extract_multipart(ServerRequestInterface $request, string $body, string $boundary): ServerRequestInterface
+    {
         $parts = explode('--' . $boundary, $body);
         $files = [];
         $parsed = [];
 
         foreach ($parts as $part) {
-            $sections = explode ("\r\n\r\n", trim($part), 2);
+            $sections = explode("\r\n\r\n", trim($part), 2);
 
             $mediaType = 'application/octet-stream';
             $filename = null;
@@ -57,11 +81,11 @@ if (!function_exists(__NAMESPACE__ . '\extract_multipart')) {
                             $names
                         );
 
-                        if (isset($names['filename']) && $names['filename'] !== '' && $names['filename'] !== null) {
+                        if (isset($names['filename']) && $names['filename'] !== '') {
                             $filename = $names['filename'];
                         }
 
-                        if (isset($names['name']) && $names['name'] !== ''&& $names['name'] !== null) {
+                        if (isset($names['name']) && $names['name'] !== '') {
                             $name = $names['name'];
                         }
                     }
@@ -72,10 +96,10 @@ if (!function_exists(__NAMESPACE__ . '\extract_multipart')) {
                 }
             }
 
-            if ($filename === null) {
+            if ($filename === null && $name !== null) {
                 $parsed[$name] = $sections[1] ?? '';
             } else {
-                $file = fopen(tempnam(sys_get_temp_dir(), time()), 'w+b');
+                $file = fopen(tempnam(sys_get_temp_dir(), (string) time()), 'w+b');
                 $size = fwrite($file, $sections[1] ?? '');
 
                 $files[] = new UploadedFile($file, $size, 0, $filename, $mediaType);
