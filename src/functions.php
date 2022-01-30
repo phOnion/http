@@ -5,8 +5,6 @@ namespace Onion\Framework\Http;
 use GuzzleHttp\Psr7\{Message, Query, ServerRequest, UploadedFile};
 use Psr\Http\Message\ServerRequestInterface;
 
-use function GuzzleHttp\Psr7\{parse_query, parse_request};
-
 if (!function_exists(__NAMESPACE__ . '\build_request')) {
     function build_request(string $message): ServerRequestInterface
     {

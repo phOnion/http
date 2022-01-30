@@ -1,4 +1,5 @@
 <?php
+
 namespace Onion\Framework\Http\Contexts;
 
 class HttpContext
