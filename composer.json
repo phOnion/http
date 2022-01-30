@@ -1,17 +1,26 @@
 {
-    "name": "onion/http",
-    "require": {
-        "onion/event-loop": "dev-master",
-        "onion/server": "dev-master",
-        "onion/promise": "dev-master",
-        "guzzlehttp/psr7": "^1.6"
+  "name": "onion/http",
+  "require": {
+    "onion/event-loop": "@dev",
+    "onion/interfaces": "@dev",
+    "onion/server": "@dev",
+    "onion/promise": "@dev",
+    "guzzlehttp/psr7": "^2.1.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "Onion\\Framework\\Http\\": "src/"
     },
-    "autoload": {
-        "psr-4": {
-            "Onion\\Framework\\": "src/"
-        },
-        "files": [
-            "src/functions.php"
-        ]
-    }
+    "files": [
+      "src/functions.php"
+    ]
+  },
+  "require-dev": {
+    "squizlabs/php_codesniffer": "^3.6",
+    "roave/security-advisories": "@dev"
+  },
+  "scripts": {
+    "fix": "phpcbf --standard=psr12 src/",
+    "lint": "phpcs --standard=psr12 src/"
+  }
 }
