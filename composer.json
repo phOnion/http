@@ -4,7 +4,6 @@
     "onion/event-loop": "@dev",
     "onion/interfaces": "@dev",
     "onion/server": "@dev",
-    "onion/promise": "@dev",
     "guzzlehttp/psr7": "^2.1.0",
     "onion/client": "@dev"
   },
