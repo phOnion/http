@@ -9,6 +9,7 @@ use GuzzleHttp\Psr7\Uri;
 use GuzzleHttp\Psr7\Utils;
 use Onion\Framework\Client\Client as RawClient;
 use Onion\Framework\Client\Contexts\SecureContext;
+use Onion\Framework\Loop\Interfaces\ResourceInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -19,7 +20,7 @@ use function Onion\Framework\Loop\tick;
 
 class Client implements ClientInterface
 {
-    public function sendRequest(RequestInterface $request): ResponseInterface
+    public static function send(RequestInterface $request): ResourceInterface
     {
         $components = parse_url((string) $request->getUri());
         $secure = $request->getUri()->getScheme() === 'https';
@@ -34,7 +35,7 @@ class Client implements ClientInterface
             $contexts[] = $ctx;
         }
 
-        $stream = RawClient::send(
+        return RawClient::send(
             sprintf(
                 '%s://%s:%d',
                 $secure ? 'tls' : 'tcp',
@@ -44,6 +45,11 @@ class Client implements ClientInterface
             Message::toString($request),
             contexts: $contexts
         );
+    }
+
+    public function sendRequest(RequestInterface $request): ResponseInterface
+    {
+        $stream = static::send($request);
 
         $messageHeaders = '';
 
