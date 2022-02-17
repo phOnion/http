@@ -5,7 +5,8 @@
     "onion/interfaces": "@dev",
     "onion/server": "@dev",
     "onion/promise": "@dev",
-    "guzzlehttp/psr7": "^2.1.0"
+    "guzzlehttp/psr7": "^2.1.0",
+    "onion/client": "@dev"
   },
   "autoload": {
     "psr-4": {
