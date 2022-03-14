@@ -37,7 +37,6 @@ class HttpMessageListener
 
             $connection->wait(Operation::WRITE);
             $connection->write(Message::toString($event->getResponse()));
-            $connection->close();
         }
     }
 }
