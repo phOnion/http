@@ -24,7 +24,7 @@ class Client implements ClientInterface
     {
         $components = parse_url((string) $request->getUri());
         $secure = $request->getUri()->getScheme() === 'https';
-        $port = $components['port'] ?? $secure ? 443 : 80;
+        $port = $components['port'] ?? ($secure ? 443 : 80);
         $contexts = [];
         if ($secure) {
             $ctx = new SecureContext();
