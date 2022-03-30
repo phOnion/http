@@ -86,13 +86,14 @@ class Client implements ClientInterface
             $headers = $headers->withBody(
                 $this->processChunkedMessage($body)
             );
-        } else if ($headers->hasHeader('content-length')) {
+        } elseif ($headers->hasHeader('content-length')) {
             $body =  Utils::streamFor();
 
             while ($body->getSize() < (int) $headers->getHeaderLine('content-length')) {
                 $body->write($stream->read(8192));
                 tick();
             }
+            $body->rewind();
 
             $headers = $headers->withBody($body);
         }
@@ -112,6 +113,8 @@ class Client implements ClientInterface
 
             tick();
         }
+
+        $body->rewind();
 
         return $body;
     }
