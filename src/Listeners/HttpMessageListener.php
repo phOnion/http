@@ -35,8 +35,10 @@ class HttpMessageListener
                 ),
             );
 
-            $connection->wait(Operation::WRITE);
-            $connection->write(Message::toString($event->getResponse()));
+            if (!$connection->eof()) {
+                $connection->wait(Operation::WRITE);
+                $connection->write(Message::toString($event->getResponse()));
+            }
         }
     }
 }
