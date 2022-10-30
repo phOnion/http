@@ -35,7 +35,7 @@ class HttpMessageListener
                 ),
             );
 
-            if (!$connection->eof()) {
+            if (!$connection->eof() && $event->isPropagationStopped()) {
                 $connection->wait(Operation::WRITE);
                 $connection->write(Message::toString($event->getResponse()));
             }
