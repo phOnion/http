@@ -4,16 +4,12 @@ declare(strict_types=1);
 
 namespace Onion\Framework\Http;
 
-use GuzzleHttp\Psr7\Message;
-use GuzzleHttp\Psr7\Uri;
-use GuzzleHttp\Psr7\Utils;
+use GuzzleHttp\Psr7\{Message, Uri, Utils};
 use Onion\Framework\Client\Client as RawClient;
 use Onion\Framework\Client\Contexts\SecureContext;
 use Onion\Framework\Loop\Interfaces\ResourceInterface;
 use Psr\Http\Client\ClientInterface;
-use Psr\Http\Message\RequestInterface;
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\StreamInterface;
+use Psr\Http\Message\{RequestInterface, ResponseInterface, StreamInterface};
 
 use function Onion\Framework\Client\gethostbyname;
 use function Onion\Framework\Loop\tick;
@@ -103,19 +99,6 @@ class Client implements ClientInterface
 
     private function processChunkedMessage(string $content): StreamInterface
     {
-        $body = Utils::streamFor('');
-
-        for (; !empty($content); $content = trim($content)) {
-            $pos = stripos($content, "\r\n");
-            $len = hexdec(substr($content, 0, $pos));
-            $body->write(substr($content, $pos + 2, $len));
-            $content = substr($content, $pos + 2 + $len);
-
-            tick();
-        }
-
-        $body->rewind();
-
-        return $body;
+        return Utils::streamFor(process_chunked_message($content));
     }
 }

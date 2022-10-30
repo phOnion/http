@@ -5,6 +5,8 @@ namespace Onion\Framework\Http;
 use GuzzleHttp\Psr7\{Message, Query, ServerRequest, UploadedFile};
 use Psr\Http\Message\ServerRequestInterface;
 
+use function Onion\Framework\Loop\tick;
+
 if (!function_exists(__NAMESPACE__ . '\build_request')) {
     function build_request(string $message): ServerRequestInterface
     {
@@ -24,6 +26,11 @@ if (!function_exists(__NAMESPACE__ . '\build_request')) {
         $bodyLength = (int) $req->getHeaderLine('content-length');
         if ($bodyLength > 0) {
             $body = (string) $req->getBody();
+
+            if ($req->hasHeader('transfer-encoding') && $req->getHeaderLine('transfer-encoding') === 'chunked') {
+                $body = process_chunked_message($body);
+            }
+
             $pattern = '/^multipart\/form-data; boundary=(?P<boundary>.*)$/i';
             if (preg_match($pattern, $request->getHeaderLine('content-type'), $matches)) {
                 $request = extract_multipart($request, $body, $matches['boundary']);
@@ -106,5 +113,23 @@ if (!function_exists(__NAMESPACE__ . '\extract_multipart')) {
 
         return $request->withParsedBody($parsed)
             ->withUploadedFiles($files);
+    }
+}
+
+if (!function_exists(__NAMESPACE__ . '\process_chunked_message')) {
+    function process_chunked_message(string $content): string
+    {
+        $body = '';
+
+        for (; !empty($content); $content = trim($content)) {
+            $pos = stripos($content, "\r\n");
+            $len = hexdec(substr($content, 0, $pos));
+            $body .= substr($content, $pos + 2, $len);
+            $content = substr($content, $pos + 2 + $len);
+
+            tick();
+        }
+
+        return $body;
     }
 }
