@@ -25,7 +25,10 @@ if (!function_exists(__NAMESPACE__ . '\build_request')) {
 
         $bodyLength = (int) $req->getHeaderLine('content-length');
         if ($bodyLength > 0) {
-            $body = (string) $req->getBody();
+            $stream = $req->getBody();
+            $stream->rewind();
+            $body = $stream->getContents();
+            $stream->rewind();
 
             if ($req->hasHeader('transfer-encoding') && $req->getHeaderLine('transfer-encoding') === 'chunked') {
                 $body = process_chunked_message($body);
@@ -78,7 +81,7 @@ if (!function_exists(__NAMESPACE__ . '\extract_multipart')) {
             $name = null;
 
             foreach (explode("\r\n", $sections[0]) as $header) {
-                if (preg_match('/^(?J)(?P<name>.*): (?P<value>.*)$/im', $header, $matches)) {
+                if (preg_match('/^(?P<name>[a-z0-9-_]+):\s?(?P<value>.+)$/im', $header, $matches)) {
                     if ($matches['name'] === 'Content-Disposition') {
                         preg_match(
                             '/form-data; name=\"(?P<name>[^"]+)\"(?:; filename=\"(?P<filename>[^"]+)\")?/',
@@ -87,11 +90,11 @@ if (!function_exists(__NAMESPACE__ . '\extract_multipart')) {
                         );
 
                         if (isset($names['filename']) && $names['filename'] !== '') {
-                            $filename = $names['filename'];
+                            $filename = urldecode($names['filename']);
                         }
 
                         if (isset($names['name']) && $names['name'] !== '') {
-                            $name = $names['name'];
+                            $name = urldecode($names['name']);
                         }
                     }
 
