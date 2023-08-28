@@ -16,8 +16,6 @@ use function Onion\Framework\Http\{build_request, stringify_message};
 
 class HttpDriver implements DriverInterface
 {
-    private const GREETING_REGEX = '';
-    private const HEADERS_REGEX = '';
 
     private readonly ?ContextInterface $ctx;
     private readonly Psr17Factory $factory;
