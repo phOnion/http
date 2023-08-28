@@ -1,42 +1,26 @@
 <?php
 
-use GuzzleHttp\Psr7\Message;
-use GuzzleHttp\Psr7\Response;
-use GuzzleHttp\Psr7\Utils;
-use Onion\Framework\Event\Dispatcher;
-use Onion\Framework\Event\ListenerProviders\AggregateProvider;
-use Onion\Framework\Event\ListenerProviders\SimpleProvider;
-use Onion\Framework\Http\Events\RequestEvent;
-use Onion\Framework\Http\Listeners\HttpMessageListener;
-use Onion\Framework\Server\Drivers\NetworkDriver;
-use Onion\Framework\Server\Events\MessageEvent;
+use Nyholm\Psr7\Factory\Psr17Factory;
+use Onion\Framework\Http\Drivers\HttpDriver;
 use Onion\Framework\Server\Server;
+use Psr\Http\Message\ServerRequestInterface;
 
-use function Onion\Framework\Loop\scheduler;
+use function Onion\Framework\Loop\{scheduler, coroutine};
+use function Onion\Framework\Http\stringify_message;
 
 require_once __DIR__ . '/../vendor/autoload.php';
-$provider = new AggregateProvider;
-$provider->addProvider(new SimpleProvider([
-    MessageEvent::class => [
-        function (MessageEvent $ev) use (&$dispatcher) {
-            (new HttpMessageListener($dispatcher))($ev);
-        }
-    ],
-    RequestEvent::class => [
-        function (RequestEvent $event) {
-            $event->setResponse(
-                (new Response())->withBody(
-                    Utils::streamFor(Message::toString($event->request)),
-                ),
-            );
-        }
-    ],
-]));
 
-$dispatcher = new Dispatcher($provider);
+scheduler()->addErrorHandler(fn ($e) => var_dump("{$e->getMessage()} ({$e->getFile()}:{$e->getLine()})\n{$e->getTraceAsString()}"));
 
-$server = new Server($dispatcher);
-$server->attach(new NetworkDriver($dispatcher), 'tcp://0.0.0.0', 8080);
+$server = new Server();
+$server->attach(
+    new HttpDriver('0.0.0.0', 8080),
+    function (ServerRequestInterface $request, \Onion\Framework\Loop\Interfaces\ResourceInterface $buffer) {
+        $factory = new Psr17Factory();
+
+        return $factory->createResponse(200)
+            ->withBody($factory->createStream(stringify_message($request)));
+    }
+);
 
 $server->start();
-scheduler()->start();

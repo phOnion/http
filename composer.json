@@ -4,8 +4,9 @@
     "onion/event-loop": "@dev",
     "onion/interfaces": "@dev",
     "onion/server": "@dev",
-    "guzzlehttp/psr7": "^2.1.0",
-    "onion/client": "@dev"
+    "onion/client": "@dev",
+    "nyholm/psr7": "^1.8",
+    "nyholm/psr7-server": "^1.0"
   },
   "autoload": {
     "psr-4": {
