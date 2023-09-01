@@ -278,7 +278,7 @@ if (!function_exists(__NAMESPACE__ . '\stringify_message')) {
 
         write($buffer, "\r\n");
 
-        if (!$withBody) {
+        if (!$withBody || !$message->getBody()->getSize() === 0) {
             return $buffer;
         }
 
