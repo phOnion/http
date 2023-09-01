@@ -3,15 +3,16 @@
 namespace Onion\Framework\Http;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
-use Nyholm\Psr7\{Stream, UploadedFile};
+use Nyholm\Psr7\{Stream, UploadedFile, Response};
 use Nyholm\Psr7Server\ServerRequestCreator;
 use Onion\Framework\Loop\Interfaces\ResourceInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Onion\Framework\Http\Resources\DecodingBuffer;
 
 use function Onion\Framework\Loop\{suspend, read, write};
 
 if (!function_exists(__NAMESPACE__ . '\build_request')) {
-    function build_request(ResourceInterface $connection): ServerRequestInterface
+    function read_request(ResourceInterface $connection): ServerRequestInterface
     {
         static $factory;
         static $creator;
@@ -86,7 +87,7 @@ if (!function_exists(__NAMESPACE__ . '\build_request')) {
 
 
         if ($message->hasHeader('transfer-encoding') || $message->hasHeader('content-encoding')) {
-            $body = new \Onion\Framework\Http\Resources\DecodingBuffer(
+            $body = new DecodingBuffer(
                 array_unique(array_map(trim(...), explode(
                     ', ',
                     "{$message->getHeaderLine('transfer-encoding')}, " .
@@ -123,7 +124,7 @@ if (!function_exists(__NAMESPACE__ . '\build_request')) {
         // Ensure we have finalized decoding in case of decoding stream
         $body->close();
 
-        $message = $message->withBody($factory->createStream((string) $body));
+        $message = $message->withBody(Stream::create((string) $body));
 
         $contentType = $message->getHeaderLine('content-type');
         $pattern = '/^multipart\/form-data; boundary=(?P<boundary>.*)$/i';
@@ -156,6 +157,80 @@ if (!function_exists(__NAMESPACE__ . '\build_request')) {
         }
 
         return $message->withCookieParams($cookies);
+    }
+}
+
+if (!function_exists(__NAMESPACE__ . '\read_response')) {
+    function read_response(ResourceInterface $resource): \Psr\Http\Message\ResponseInterface
+    {
+        $content = read($resource, function (ResourceInterface $connection) {
+            $buffer = '';
+            while (preg_match('/\r?\n\r?\n$/i', substr($buffer, -4, 4)) !== 1) {
+                $buffer .= $connection->read(1);
+                suspend();
+            }
+
+            return $buffer;
+        });
+        $code = 200;
+        $reason = 'OK';
+        $version = '1.1';
+
+        if (preg_match(
+            '/^(?:HTTP\/|^[A-Z]+ \S+ HTTP\/)(?P<version>\d+(?:\.\d+)?)[ \t]+' .
+                '(?P<code>[0-9]{3})[ \t]+(?P<reason>.*)\r?\n/i',
+            $content,
+            $matches
+        ) === 1) {
+            [,$version, $code, $reason] = $matches;
+        }
+
+        $message = new Response(status: $code, reason: $reason, version: $version);
+
+
+        preg_match_all(
+            '/^(?P<name>[^()<>@,;:\\\"\/[\]?={}\x01-\x20\x7F]++):[ \t]*+' .
+                '(?P<value>(?:[ \t]*+[\x21-\x7E\x80-\xFF]++)*+)[ \t]*+\r?\n/m',
+            $content,
+            $headerLines,
+            PREG_SET_ORDER
+        );
+        foreach ($headerLines as $headerLine) {
+            $message = $message->withAddedHeader(strtolower($headerLine['name']), $headerLine['value']);
+        }
+
+        $buffer = new \Onion\Framework\Loop\Resources\Buffer();
+
+
+        if ($message->hasHeader('transfer-encoding')) {
+            $buffer = new DecodingBuffer(
+                array_unique(array_map(trim(...), explode(',', "{$message->getHeaderLine('transfer-encoding')}, {$message->getHeaderLine('content-encoding')}")))
+            );
+        }
+
+        if ($message->hasHeader('content-length')) {
+            read($resource, function (ResourceInterface $connection) use ($message, $buffer) {
+                $total = (int) $message->getHeaderLine('content-length');
+                while ($buffer->size() < $total) {
+                    $buffer->write($connection->read($total - strlen($buffer)));
+                    suspend();
+                }
+
+                return $buffer;
+            });
+        } else {
+            read($resource, function (ResourceInterface $connection) use ($buffer) {
+                do {
+                    // read by chunks
+                    $buffer->write($chunk = $connection->read(4096));
+                    suspend();
+                } while (preg_match('/\r?\n\r?\n$/i', substr($chunk, -4, 4)) !== 1 && !$connection->eof());
+
+                return $buffer;
+            });
+        }
+
+        return $message->withBody(Stream::create((string) $buffer));
     }
 }
 

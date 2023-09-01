@@ -12,7 +12,7 @@ use Onion\Framework\Server\Interfaces\DriverInterface;
 use Onion\Framework\Server\Interfaces\ContextInterface;
 
 use function Onion\Framework\Loop\{signal, pipe};
-use function Onion\Framework\Http\{build_request, stringify_message};
+use function Onion\Framework\Http\{read_request, stringify_message};
 
 class HttpDriver implements DriverInterface
 {
@@ -40,7 +40,7 @@ class HttpDriver implements DriverInterface
                 );
 
                 /** @var \Psr\Http\Message\ResponseInterface $response */
-                $response = $callback(build_request($connection), $chunkingBody);
+                $response = $callback(read_request($connection), $chunkingBody);
 
                 $body = $response->getBody();
                 if ($body === $chunkingBody) {
