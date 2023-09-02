@@ -296,7 +296,7 @@ if (!function_exists(__NAMESPACE__ . '\extract_multipart')) {
     }
 }
 
-if (!function_exists(__NAMESPACE__ . '\process_chunked_message')) {
+if (!function_exists(__NAMESPACE__ . '\pipe_chunked')) {
     function pipe_chunked(ResourceInterface|string $resource, ResourceInterface $buffer): ResourceInterface
     {
         if (!$resource instanceof ResourceInterface) {
