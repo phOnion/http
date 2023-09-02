@@ -27,7 +27,7 @@ if (!function_exists(__NAMESPACE__ . '\build_request')) {
                 $chunk = $connection->read(4096);
 
                 if (preg_match('/(\r?\n\r?\n)/im', $chunk, $matches, PREG_OFFSET_CAPTURE)) {
-                    $headers .= substr($chunk, 0, $matches[1][1]);
+                    $headers .= substr($chunk, 0, $matches[1][1] + 2);
                     $body->write(substr($chunk, $matches[1][1] + strlen($matches[1][0])));
                     break;
                 } else {
