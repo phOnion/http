@@ -88,36 +88,21 @@ if (!function_exists(__NAMESPACE__ . '\build_request')) {
 
         if ($message->hasHeader('transfer-encoding') || $message->hasHeader('content-encoding')) {
             $body = new DecodingBuffer(
-                array_unique(array_map(trim(...), explode(
+                array_map(trim(...), explode(
                     ', ',
-                    "{$message->getHeaderLine('transfer-encoding')}, " .
-                        "{$message->getHeaderLine('content-encoding')}"
-                )))
+                    $message->getHeaderLine('transfer-encoding')
+                ))
             );
-        }
-
-        if ($message->hasHeader('content-length')) {
+        } elseif ($message->hasHeader('content-length')) {
             read($connection, function (ResourceInterface $connection) use ($message, $body) {
                 $total = (int) $message->getHeaderLine('content-length');
                 while ($body->size() < $total) {
                     $body->write($connection->read($total - strlen($body)));
+
                     suspend();
                 }
 
                 return $body;
-            });
-        } else {
-            read($connection, function (ResourceInterface $connection) use ($body) {
-                while (preg_match('/\r?\n\r?\n$/i', $body->read(4)) !== 1 && !$connection->eof()) {
-                    // fallback to sequential reading if no content-length is provided
-                    // so that HTTP-pipelining is possible, although not necessarily
-                    // supported for now
-                    $body->write($connection->read(4096));
-                    suspend();
-                    $body->seek(-4, SEEK_END);
-                }
-
-                return trim($body);
             });
         }
 
