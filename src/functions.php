@@ -106,9 +106,6 @@ if (!function_exists(__NAMESPACE__ . '\build_request')) {
             });
         }
 
-        // Ensure we have finalized decoding in case of decoding stream
-        $body->close();
-
         $message = $message->withBody(Stream::create((string) $body));
 
         $contentType = $message->getHeaderLine('content-type');
