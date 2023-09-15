@@ -183,19 +183,26 @@ if (!function_exists(__NAMESPACE__ . '\read_response')) {
 
         $buffer = new \Onion\Framework\Loop\Resources\Buffer();
 
-
-        if ($message->hasHeader('transfer-encoding')) {
+        if ($message->hasHeader('transfer-encoding') || $message->hasHeader('content-encoding')) {
             $buffer = new DecodingBuffer(
-                array_unique(array_map(trim(...), explode(',', "{$message->getHeaderLine('transfer-encoding')}, {$message->getHeaderLine('content-encoding')}")))
+                array_filter(array_unique(array_map(trim(...), explode(',', "{$message->getHeaderLine('transfer-encoding')}, {$message->getHeaderLine('content-encoding')}"))))
             );
         }
 
         if ($message->hasHeader('content-length')) {
             read($resource, function (ResourceInterface $connection) use ($message, $buffer) {
                 $total = (int) $message->getHeaderLine('content-length');
-                while ($buffer->size() < $total) {
-                    $buffer->write($connection->read($total - strlen($buffer)));
+                $length = 0;
+
+                while ($length < $total) {
+                    $buffer->write(($chunk = $connection->read($total - $buffer->size())));
+                    $length += strlen($chunk);
+
                     suspend();
+                }
+
+                if ($buffer instanceof DecodingBuffer) {
+                    $buffer->finish();
                 }
 
                 return $buffer;
