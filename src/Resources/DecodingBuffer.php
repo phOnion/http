@@ -26,8 +26,8 @@ class DecodingBuffer extends Buffer
                     fn (string $data) => $data,
                 ],
                 default => [
-                    fn (string $data) => inflate_add($ctx, $data, ZLIB_NO_FLUSH),
-                    fn (string $data) => inflate_add($ctx, $data, ZLIB_FINISH)
+                    fn (string $data) => inflate_add($ctx, $data, ZLIB_SYNC_FLUSH),
+                    fn (string $data) => inflate_add($ctx, $data, ZLIB_FINISH),
                 ],
             };
         }
@@ -61,6 +61,8 @@ class DecodingBuffer extends Buffer
         foreach ($this->encoders as [,$finisher]) {
             $ch .= $finisher($ch);
         }
+
+        parent::write($ch);
 
         $this->finished = true;
         return $ch;

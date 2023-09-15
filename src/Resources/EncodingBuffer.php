@@ -34,8 +34,8 @@ class EncodingBuffer extends Buffer
                     fn (string $data) => $ctx->generate($data),
                 ],
                 default => [
-                    fn (string $data) => deflate_add($ctx, $data, ZLIB_NO_FLUSH),
-                    fn (string $data) => deflate_add($ctx, $data, ZLIB_FINISH)
+                    fn (string $data) => deflate_add($ctx, $data, ZLIB_SYNC_FLUSH),
+                    fn (string $data) => deflate_add($ctx, $data, ZLIB_FINISH),
                 ],
             };
         }
@@ -74,6 +74,8 @@ class EncodingBuffer extends Buffer
         foreach ($this->encoders as [, $finisher]) {
             $ch = $finisher($ch);
         }
+
+        parent::write($ch);
 
         $this->finished = true;
         return $ch;
