@@ -1,32 +1,28 @@
 <?php
+declare(strict_types= 1);
 
 namespace Onion\Framework\Http;
 
-use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\{Stream, UploadedFile, Response};
+use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7Server\ServerRequestCreator;
-use Onion\Framework\Loop\Interfaces\ResourceInterface;
-use Psr\Http\Message\ServerRequestInterface;
 use Onion\Framework\Http\Resources\DecodingBuffer;
+use Onion\Framework\Loop\Interfaces\ResourceInterface;
+use Psr\Http\Message\{RequestInterface, ResponseInterface, ServerRequestInterface};
 
 use function Onion\Framework\Loop\{suspend, read, write};
 
-if (!function_exists(__NAMESPACE__ . '\build_request')) {
-    function read_request(ResourceInterface $connection): ServerRequestInterface
+
+if (!function_exists(__NAMESPACE__ . '\build_message')) {
+    function build_message(ResourceInterface $connection, bool $withBody = true): ResponseInterface|RequestInterface|ServerRequestInterface
     {
-        static $factory;
-        static $creator;
-
-        $factory ??= new Psr17Factory();
-        $creator ??= new ServerRequestCreator($factory, $factory, $factory, $factory);
-
         $body = new \Onion\Framework\Loop\Resources\Buffer();
-        $message = read($connection, function (ResourceInterface $connection) use ($body) {
+        $content = read($connection, function (ResourceInterface $connection) use ($body) {
             $headers = '';
             do {
                 $chunk = $connection->read(4096);
 
-                if (preg_match('/\r?\n\r?\n/im', $chunk, $matches, PREG_OFFSET_CAPTURE)) {
+                if (preg_match('/\r?\n\r?\n/im', (string) $chunk, $matches, PREG_OFFSET_CAPTURE)) {
                     $headers .= substr($chunk, 0, $matches[0][1] + 2);
                     $body->write(substr($chunk, $matches[0][1] + strlen($matches[0][0])));
                     break;
@@ -39,124 +35,7 @@ if (!function_exists(__NAMESPACE__ . '\build_request')) {
             return $headers;
         });
 
-        $method = $path = $version = null;
-        $headers = [];
-
-        if (preg_match(
-            '/^(?P<method>[A-Z]+)[ \t]+(?P<path>.*)[ \t]+' .
-                '(?:HTTP\/|^[A-Z]+ \S+ HTTP\/)(?P<version>\d+(?:\.\d+)?)\r?\n/i',
-            $message,
-            $matches
-        )) {
-            [,$method, $path, $version] = $matches;
-        }
-        preg_match_all(
-            '/^(?P<name>[^()<>@,;:\\\"\/[\]?={}\x01-\x20\x7F]++):[ \t]*+' .
-                '(?P<value>(?:[ \t]*+[\x21-\x7E\x80-\xFF]++)*+)[ \t]*+\r?\n/m',
-            $message,
-            $headerLines,
-            PREG_SET_ORDER,
-        );
-
-        $cookies = [];
-        foreach ($headerLines as $headerLine) {
-            $headerLine['name'] = strtolower($headerLine['name']);
-            if (!isset($headers[$headerLine['name']])) {
-                $headers[$headerLine['name']] = [];
-            }
-
-            if ($headerLine['name'] === 'cookie') {
-                $cookies = array_reduce(explode($headerLine['value'], ';'), function ($carry, $item) {
-                    [$key, $value] = explode('=', $item);
-                    $carry[$key] = $value;
-                    return $carry;
-                }, []);
-            }
-
-            $headers[$headerLine['name']][] = $headerLine['value'];
-        }
-        [$path, $query] = explode('?', $path . '?' , 3);
-        parse_str($query, $queryParams);
-
-        $message = $creator->fromArrays([
-            'SERVER_PROTOCOL' => "HTTP/{$version}",
-            'REQUEST_METHOD' => $method,
-            'REQUEST_URI' => $path,
-            'QUERY_STRING' => $query,
-        ], $headers, $cookies, $queryParams, null, [], null);
-
-
-        if ($message->hasHeader('transfer-encoding') || $message->hasHeader('content-encoding')) {
-            $body = new DecodingBuffer(
-                array_map(trim(...), explode(
-                    ', ',
-                    $message->getHeaderLine('transfer-encoding')
-                ))
-            );
-        } elseif ($message->hasHeader('content-length')) {
-            read($connection, function (ResourceInterface $connection) use ($message, $body) {
-                $total = (int) $message->getHeaderLine('content-length');
-                while ($body->size() < $total) {
-                    $body->write($connection->read($total - strlen($body)));
-
-                    suspend();
-                }
-
-                return $body;
-            });
-        }
-
-        $message = $message->withBody(Stream::create((string) $body));
-
-        $contentType = $message->getHeaderLine('content-type');
-        $pattern = '/^multipart\/form-data; boundary=(?P<boundary>.*)$/i';
-        if (preg_match($pattern, $contentType, $matches)) {
-            $message = extract_multipart($message, $message->getBody()->getContents(), $matches['boundary']);
-        } elseif (
-            preg_match('/^application\/x-www-form-urlencoded/', $contentType, $matches)
-        ) {
-            parse_str($message->getBody()->getContents(), $parsedBody);
-            $message = $message->withParsedBody(array_map(urldecode(...), $parsedBody));
-        } elseif ($message->getBody()->getSize() <= 8192 && preg_match('/^application\/(.*\+)json/', $contentType)) {
-            // Do not decode larger than 8kb to prevent OOM issues
-            $message = $message->withParsedBody(json_decode($message->getBody()->getContents(), true) ?? []);
-        }
-
-        $cookies = [];
-        foreach ($message->getHeader('cookie') as $rawValue) {
-            foreach (explode('; ', $rawValue) as $line) {
-                list($cookie, $value) = explode('=', $line, 2);
-                if (isset($cookies[$cookie])) {
-                    if (!is_array($cookies[$cookie])) {
-                        $cookies[$cookie] = [$cookies[$cookie]];
-                    }
-
-                    $cookies[$cookie][] = $value;
-                } else {
-                    $cookies[$cookie] = $value;
-                }
-            }
-        }
-
-        return $message->withCookieParams($cookies);
-    }
-}
-
-if (!function_exists(__NAMESPACE__ . '\read_response')) {
-    function read_response(ResourceInterface $resource): \Psr\Http\Message\ResponseInterface
-    {
-        $content = read($resource, function (ResourceInterface $connection) {
-            $buffer = '';
-            while (preg_match('/\r?\n\r?\n$/i', substr($buffer, -4, 4)) !== 1) {
-                $buffer .= $connection->read(1);
-                suspend();
-            }
-
-            return $buffer;
-        });
-        $code = 200;
-        $reason = 'OK';
-        $version = '1.1';
+        $expectBody = false;
 
         if (preg_match(
             '/^(?:HTTP\/|^[A-Z]+ \S+ HTTP\/)(?P<version>\d+(?:\.\d+)?)[ \t]+' .
@@ -164,62 +43,167 @@ if (!function_exists(__NAMESPACE__ . '\read_response')) {
             $content,
             $matches
         ) === 1) {
-            [,$version, $code, $reason] = $matches;
+            [,$version, $status, $reason] = $matches;
+
+            $message = new Response(
+                status: (int) $status,
+                version: $version,
+                reason: $reason,
+            );
+
+            $expectBody = match ($message->getStatusCode()) {
+                200, 201, 204, 401, 403, 404, 500, 503 => true,
+                default => false,
+            };
+        } elseif (preg_match(
+            '/^(?P<method>[A-Z]+)[ \t]+(?P<path>.*)[ \t]+' .
+                '(?:HTTP\/|^[A-Z]+ \S+ HTTP\/)(?P<version>\d+(?:\.\d+)?)\r?\n/i',
+            $content,
+            $matches
+        )) {
+            $factory ??= new Psr17Factory();
+            $creator ??= new ServerRequestCreator($factory, $factory, $factory, $factory);
+
+            [,$method, $path, $version] = $matches;
+            [$path, $query] = explode('?', $path . '?' , 3);
+            parse_str($query, $queryParams);
+
+            $message = $creator->fromArrays([
+                'SERVER_PROTOCOL' => "HTTP/{$version}",
+                'REQUEST_METHOD' => $method,
+                'REQUEST_URI' => $path,
+                'QUERY_STRING' => $query,
+            ], get: $queryParams);
+
+            $expectBody = match ($message->getMethod()) {
+                'post', 'put', 'patch' => true,
+                default => false,
+            };
+        } else {
+            throw new \RuntimeException(
+                'Connection is in invalid state. Unable to create PSR-7 Message'
+            );
         }
-
-        $message = new Response(status: $code, reason: $reason, version: $version);
-
 
         preg_match_all(
             '/^(?P<name>[^()<>@,;:\\\"\/[\]?={}\x01-\x20\x7F]++):[ \t]*+' .
                 '(?P<value>(?:[ \t]*+[\x21-\x7E\x80-\xFF]++)*+)[ \t]*+\r?\n/m',
             $content,
             $headerLines,
-            PREG_SET_ORDER
+            PREG_SET_ORDER,
         );
+
         foreach ($headerLines as $headerLine) {
-            $message = $message->withAddedHeader(strtolower($headerLine['name']), $headerLine['value']);
+            $headerLine['name'] = strtolower($headerLine['name']);
+
+            $message = $message->withAddedHeader($headerLine['name'], $headerLine['value']);
         }
 
-        $buffer = new \Onion\Framework\Loop\Resources\Buffer();
+        if ($withBody) {
+            if ($expectBody || $message->hasHeader('transfer-encoding') || $message->hasHeader('content-encoding')) {
+                $expectBody = true;
+                $decoder = new DecodingBuffer(
+                    array_filter(array_unique(
+                        array_map(
+                            trim(...),
+                            explode(
+                                ',',
+                                "{$message->getHeaderLine('transfer-encoding')}, {$message->getHeaderLine('content-encoding')}"
+                            )
+                        )
+                    ))
+                );
 
-        if ($message->hasHeader('transfer-encoding') || $message->hasHeader('content-encoding')) {
-            $buffer = new DecodingBuffer(
-                array_filter(array_unique(array_map(trim(...), explode(',', "{$message->getHeaderLine('transfer-encoding')}, {$message->getHeaderLine('content-encoding')}"))))
-            );
+                $decoder->write((string) $body);
+                $body = $decoder;
+            }
+
+            $bodySize = INF;
+            if ($message->hasHeader('content-length')) {
+                $expectBody = true;
+                $bodySize = (int) $message->getHeader('content-length');
+            }
+
+            if ($expectBody && $withBody) {
+                read($connection, function (ResourceInterface $connection) use ($body, $bodySize) {
+                    do {
+                        // read by chunks
+                        $body->write($chunk = $connection->read(4096));
+                        suspend();
+                    } while (
+                        $body->size() < $bodySize &&
+                        preg_match('/\r?\n\r?\n$/i', $chunk) !== 1 &&
+                        !$connection->eof()
+                    );
+
+                    return $body;
+                });
+
+                $message = $message->withBody(Stream::create((string) $body));
+            }
         }
 
-        if ($message->hasHeader('content-length')) {
-            read($resource, function (ResourceInterface $connection) use ($message, $buffer) {
-                $total = (int) $message->getHeaderLine('content-length');
-                $length = 0;
-
-                while ($length < $total) {
-                    $buffer->write(($chunk = $connection->read($total - $buffer->size())));
-                    $length += strlen($chunk);
-
-                    suspend();
+        if ($message instanceof ServerRequestInterface) {
+            if ($withBody && $message->getBody()->getSize() > 0) {
+                $contentType = $message->getHeaderLine('content-type');
+                $pattern = '/^multipart\/form-data; boundary=(?P<boundary>.*)$/i';
+                if (preg_match($pattern, $contentType, $matches)) {
+                    $message = extract_multipart($message, $message->getBody()->getContents(), $matches['boundary']);
+                } elseif (
+                    preg_match('/^application\/x-www-form-urlencoded/', $contentType, $matches)
+                ) {
+                    parse_str($message->getBody()->getContents(), $parsedBody);
+                    $message = $message->withParsedBody(array_map(urldecode(...), $parsedBody));
+                } elseif ($message->getBody()->getSize() <= 8192 && preg_match('/^application\/(.*\+)json/', $contentType)) {
+                    // Do not decode larger than 8kb to prevent OOM issues
+                    $message = $message->withParsedBody(json_decode($message->getBody()->getContents(), true) ?? []);
                 }
 
-                if ($buffer instanceof DecodingBuffer) {
-                    $buffer->finish();
+                $message = $message->withBody(Stream::create((string) $body));
+            }
+
+            $cookies = [];
+            foreach ($message->getHeader('cookie') as $rawValue) {
+                foreach (explode('; ', $rawValue) as $line) {
+                    list($cookie, $value) = explode('=', $line, 2);
+                    if (isset($cookies[$cookie])) {
+                        if (!is_array($cookies[$cookie])) {
+                            $cookies[$cookie] = [$cookies[$cookie]];
+                        }
+
+                        $cookies[$cookie][] = $value;
+                    } else {
+                        $cookies[$cookie] = $value;
+                    }
                 }
+            }
 
-                return $buffer;
-            });
-        } else {
-            read($resource, function (ResourceInterface $connection) use ($buffer) {
-                do {
-                    // read by chunks
-                    $buffer->write($chunk = $connection->read(4096));
-                    suspend();
-                } while (preg_match('/\r?\n\r?\n$/i', substr($chunk, -4, 4)) !== 1 && !$connection->eof());
-
-                return $buffer;
-            });
+            $message = $message->withCookieParams($cookies);
         }
 
-        return $message->withBody(Stream::create((string) $buffer));
+        return $message;
+    }
+}
+
+if (!function_exists(__NAMESPACE__ . '\read_request')) {
+    /**
+     * @deprecated
+     * @see \Onion\Framework\Http\build_message
+     */
+    function read_request(ResourceInterface $connection): ServerRequestInterface
+    {
+        return build_message($connection);
+    }
+}
+
+if (!function_exists(__NAMESPACE__ . '\read_response')) {
+    /**
+     * @deprecated
+     * @see \Onion\Framework\Http\build_message
+     */
+    function read_response(ResourceInterface $resource): ResponseInterface
+    {
+        return build_message($resource);
     }
 }
 
@@ -282,43 +266,6 @@ if (!function_exists(__NAMESPACE__ . '\extract_multipart')) {
 
         return $request->withParsedBody($parsed)
             ->withUploadedFiles($files);
-    }
-}
-
-if (!function_exists(__NAMESPACE__ . '\pipe_chunked')) {
-    function pipe_chunked(ResourceInterface|string $resource, ResourceInterface $buffer): ResourceInterface
-    {
-        if (!$resource instanceof ResourceInterface) {
-            $b = new \Onion\Framework\Loop\Resources\Buffer();
-            $b->write($resource);
-
-            $resource = $b;
-        }
-
-        return read($resource, function (ResourceInterface $client) use ($buffer) {
-            $size = '';
-            while ($size !== '0') {
-                $chunk = $client->read(1);
-                if (preg_match('/\r?\n$/i', $chunk) === 1 && $size !== '0') {
-                    $length = (int) hexdec(trim($size));
-
-                    $chunk = '';
-                    $size = '';
-                    while (strlen($chunk) < $length) {
-                        $chunk .= $client->read($length - strlen($chunk));
-                        suspend();
-                    }
-
-                    $buffer->write($chunk);
-                    $chunk .= $client->read(2);
-                    continue;
-                }
-
-                $size .= $chunk;
-            }
-
-            return $buffer;
-        });
     }
 }
 
