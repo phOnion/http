@@ -12,7 +12,7 @@ use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\{RequestInterface, ResponseInterface};
 
 use function Onion\Framework\Client\gethostbyname;
-use function Onion\Framework\Loop\{suspend, pipe, read};
+use function Onion\Framework\Loop\pipe;
 
 class Client implements ClientInterface
 {
@@ -49,10 +49,10 @@ class Client implements ClientInterface
             ...$contexts
         );
 
-        pipe(stringify_message(
+        $client->write((string) stringify_message(
             $request->withHeader('Connection', 'close')
                 ->withHeader('Accept-Encoding', 'gzip, deflate'),
-        ), $client);
+        ));
 
         return $client;
     }
@@ -68,15 +68,22 @@ class Client implements ClientInterface
             $message->getStatusCode() <= 399 &&
             $message->hasHeader('Location')
         ) {
+            $redirect = $this->factory->createUri($message->getHeaderLine('location'));
+            $uri = $request->getUri();
+
+            if ($redirect->getHost() === 0) {
+                $redirect = $redirect->withPath($uri->getPath())
+                    ->withQuery($uri->getQuery())
+                    ->withFragment($uri->getFragment());
+            }
+
             return $this->sendRequest(
                 $request
                     ->withMethod(match($message->getStatusCode()) {
                         303 => 'GET',
                         default => $request->getMethod(),
                     })
-                    ->withUri(
-                        $this->factory->createUri($message->getHeaderLine('location')),
-                    ),
+                    ->withUri($redirect),
             );
         }
 
