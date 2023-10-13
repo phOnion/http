@@ -128,7 +128,7 @@ if (!function_exists(__NAMESPACE__ . '\build_message')) {
                 read($connection, function (ResourceInterface $connection) use ($body, $bodySize) {
                     do {
                         // read by chunks
-                        $body->write($chunk = $connection->read(4096));
+                        $body->write($chunk = (string) $connection->read(4096));
                         suspend();
                     } while (
                         $body->size() < $bodySize &&
