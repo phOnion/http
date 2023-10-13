@@ -3,8 +3,6 @@ declare(strict_types=1);
 namespace Onion\Framework\Http\Drivers;
 
 use Closure;
-use \Nyholm\Psr7\Factory\Psr17Factory;
-use \Nyholm\Psr7Server\ServerRequestCreator;
 use Onion\Framework\Loop\Interfaces\{TaskInterface, SchedulerInterface, ResourceInterface};
 use \Onion\Framework\Loop\Types\{NetworkProtocol, NetworkAddress};
 use \Onion\Framework\Server\Contexts\AggregateContext;
@@ -18,8 +16,6 @@ class HttpDriver implements DriverInterface
 {
 
     private readonly ?ContextInterface $ctx;
-    private readonly Psr17Factory $factory;
-    private readonly ServerRequestCreator $creator;
 
     public function __construct(
         public readonly string $address,
@@ -27,11 +23,9 @@ class HttpDriver implements DriverInterface
         ContextInterface ...$contexts,
     ) {
         $this->ctx = !empty($contexts) ? new AggregateContext($contexts) : null;
-        $this->factory = new Psr17Factory();
-        $this->creator = new ServerRequestCreator($this->factory, $this->factory, $this->factory, $this->factory);
     }
 
-	public function listen(Closure $callback): void
+    public function listen(Closure $callback): void
     {
         signal(fn (Closure $resume, TaskInterface $task, SchedulerInterface $scheduler) => $resume(
             $scheduler->open($this->address, $this->port, function (ResourceInterface $connection) use ($callback) {
@@ -50,7 +44,7 @@ class HttpDriver implements DriverInterface
                         false
                     ), $connection);
 
-                    pipe($body, $connection);
+                    $connection->write($body->getContents());
                 } else {
                     pipe(stringify_message(
                         $response->withAddedHeader('Content-Length', (string) $response->getBody()->getSize())
@@ -62,5 +56,5 @@ class HttpDriver implements DriverInterface
                 default => NetworkAddress::NETWORK,
             }),
         ));
-	}
+    }
 }
